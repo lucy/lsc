@@ -72,16 +72,15 @@ static void fi_free(file_info *fi) {
 	free((void *)fi->linkname);
 }
 
+#define ls_isdir(fi) (S_ISDIR((fi)->mode) || S_ISDIR((fi)->linkmode))
+
 static int fi_cmp(const void *va, const void *vb) {
 	file_info *a = (file_info *const)va;
 	file_info *b = (file_info *const)vb;
 	int rev = options.reverse ? -1 : 1;
-	if (options.group_dir) {
-		if (S_ISDIR(a->linkmode) != S_ISDIR(b->linkmode))
-			return S_ISDIR(a->linkmode) ? -1 : 1;
-		if (S_ISDIR(a->mode) != S_ISDIR(b->mode))
-			return S_ISDIR(a->mode) ? -1 : 1;
-	}
+	if (options.group_dir)
+		if (ls_isdir(a) != ls_isdir(b))
+			return ls_isdir(a) ? -1 : 1;
 	if (options.sort == SORT_SIZE) {
 		ssize_t s = a->size - b->size;
 		if (s) return rev * ((s > 0) - (s < 0));
@@ -414,14 +413,15 @@ static void fmt_name(FILE *out, const struct file_info *f) {
 		if (c)
 			fputs(C_END, out);
 	}
+
 	if (options.classify) {
-		switch (t) {
-		case L_DIR: case L_STICKYOW: case L_OW: case L_STICKY:
-			fputs(CL_DIR, out); break;
-		case L_EXEC: fputs(CL_EXEC, out); break;
-		case L_FIFO: fputs(CL_FIFO, out); break;
-		case L_SOCK: fputs(CL_SOCK, out); break;
-		default: ;
+		mode_t m = f->linkname ? f->linkmode : f->mode;
+		switch (m&S_IFMT) {
+		case S_IFREG: if (m&S_IXUGO) fputs(CL_EXEC, out); break;
+		case S_IFLNK: fputs(CL_LINK, out); break;
+		case S_IFDIR: fputs(CL_DIR, out); break;
+		case S_IFIFO: fputs(CL_FIFO, out); break;
+		case S_IFSOCK: fputs(CL_SOCK, out); break;
 		}
 	}
 }
