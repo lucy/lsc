@@ -1,22 +1,18 @@
 -include config.mk
 
 bin = lsc
-src = filevercmp.c util.c lsc.c id.c ls_colors.c
-obj = $(src:.c=.o)
-dep = $(src:.c=.d)
+src = filevercmp.c grid.c id.c ls_colors.c lsc.c
 
-CPPFLAGS += -MMD -MP -D_DEFAULT_SOURCE
+CFLAGS ?= -O2 -pipe -Wall -Wextra -pedantic -g
+
+CPPFLAGS += -MMD -MP -D_XOPEN_SOURCE=700
 CFLAGS += -std=c99
 
-$(bin): $(obj)
+$(bin): $(src:.c=.o)
 
 clean:
-	rm -f $(bin) $(obj) $(dep)
+	rm -f $(bin) *.o *.d
 
-fuzz:
-	afl-clang-fast -static -g $(CFLAGS) $(CPPFLAGS) -DTEST ls_colors.c util.c -o ls_colors
-	afl-clang-fast -static -g $(CFLAGS) $(CPPFLAGS) -DTEST filevercmp.c util.c -o filevercmp
-
--include $(dep)
+-include $(src:.c=.d)
 
 .PHONY: clean

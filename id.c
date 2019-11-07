@@ -1,44 +1,37 @@
-#include <sys/types.h>
-#include <pwd.h>
 #include <grp.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
+#include <pwd.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+
 #include "util.h"
 #include "id.h"
 
-struct uid { uid_t uid; struct uid *next; char name[]; };
-struct gid { gid_t gid; struct gid *next; char name[]; };
+struct id { struct id *next; id_t id; char name[]; };
 
-static struct uid *ucache;
-
-const char *getuser(uid_t uid) {
-	for (struct uid *p = ucache; p; p = p->next)
-		if (p->uid == uid)
-			return p->name[0] ? p->name : NULL;
-	struct passwd *pwd = getpwuid(uid);
-	char *name = pwd ? pwd->pw_name : "";
-	struct uid *p = xmalloc(sizeof(*p) + strlen(name) + 1);
-	p->uid = uid;
+static const char *put(struct id **cache, id_t id, const char *name) {
+	struct id *p = xmallocr(sizeof(*p) + strlen(name) + 1, 1);
 	strcpy(p->name, name);
-	p->next = ucache;
-	ucache = p;
-	return p->name[0] ? p->name : NULL;
+	p->id = id;
+	p->next = *cache, *cache = p;
+	return p->name[0] ? p->name : 0;
 }
 
-static struct gid *gcache;
+static struct id *ucache;
 
-const char *getgroup(gid_t gid) {
-	for (struct gid *p = gcache; p; p = p->next)
-		if (p->gid == gid)
-			return p->name[0] ? p->name : NULL;
-	struct group *pwd = getgrgid(gid);
-	char *name = pwd ? pwd->gr_name : "";
-	struct gid *p = xmalloc(sizeof(*p) + strlen(name) + 1);
-	p->gid = gid;
-	strcpy(p->name, name);
-	p->next = gcache;
-	gcache = p;
-	return p->name[0] ? p->name : NULL;
+const char *getuser(uid_t id) {
+	for (struct id *p = ucache; p; p = p->next)
+		if (p->id == id) return p->name[0] ? p->name : 0;
+	struct passwd *e = getpwuid(id);
+	return put(&ucache, id, e ? e->pw_name : "");
+}
+
+static struct id *gcache;
+
+const char *getgroup(gid_t id) {
+	for (struct id *p = gcache; p; p = p->next)
+		if (p->id == id) return p->name[0] ? p->name : 0;
+	struct group *e = getgrgid(id);
+	return put(&ucache, id, e ? e->gr_name : "");
 }

@@ -1,33 +1,15 @@
-#include <ctype.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "filevercmp.h"
 #include "util.h"
 
-static size_t suffix(const char *s, size_t len) {
-	bool read_alphat = false;
-	size_t matched = 0;
-	size_t j = 0;
-	for (ssize_t i = ((ssize_t)len - 1); i >= 0; i--) {
-		char c = s[i];
-		if (isalpha(c) || c == '~')
-			read_alphat = true;
-		else if (read_alphat && c == '.')
-			matched = j + 1;
-		else if (isdigit(c))
-			read_alphat = false;
-		else
-			break;
-		j++;
-	}
-	return len - matched;
-}
-
 static int order(char c) {
-	if (isalpha(c)) return c;
-	if (isdigit(c)) return 0;
+	if (ls_isalpha(c)) return c;
+	if (ls_isdigit(c)) return 0;
 	if (c == '~') return -1;
 	return (int)c + 256;
 }
@@ -36,7 +18,8 @@ static int verrevcmp(const char *a, const char *b, size_t al, size_t bl) {
 	size_t ai = 0, bi = 0;
 	while (ai < al || bi < bl) {
 		int first_diff = 0;
-		while ((ai < al && !isdigit(a[ai])) || (bi < bl && !isdigit(b[bi]))) {
+		// XXX: heap overflow stuff with afl/asan
+		while ((ai < al && !ls_isdigit(a[ai])) || (bi < bl && !ls_isdigit(b[bi]))) {
 			int ac = (ai == al) ? 0 : order(a[ai]);
 			int bc = (bi == bl) ? 0 : order(b[bi]);
 			if (ac != bc) return ac - bc;
@@ -44,58 +27,49 @@ static int verrevcmp(const char *a, const char *b, size_t al, size_t bl) {
 		}
 		while (a[ai] == '0') ai++;
 		while (b[bi] == '0') bi++;
-		while (isdigit(a[ai]) && isdigit(b[bi])) {
+		while (ls_isdigit(a[ai]) && ls_isdigit(b[bi])) {
 			if (!first_diff) first_diff = a[ai] - b[bi];
 			ai++; bi++;
 		}
-		if (isdigit(a[ai])) return 1;
-		if (isdigit(b[bi])) return -1;
+		if (ls_isdigit(a[ai])) return 1;
+		if (ls_isdigit(b[bi])) return -1;
 		if (first_diff) return first_diff;
 	}
 	return 0;
 }
 
+// read file extension
+// ^\.?.*?(\.[A-Za-z~][A-Za-z0-9~])*$
 size_t suf_index(const char *s, size_t len) {
 	if (len != 0 && s[0] == '.') { s++; len--; }
-	return suffix(s, len);
+	bool alpha = false;
+	size_t match = 0;
+	for (size_t j = 0; j < len; j++) {
+		char c = s[len - j - 1];
+		if (ls_isalpha(c) || c == '~')
+			alpha = true;
+		else if (alpha && c == '.')
+			match = j + 1;
+		else if (ls_isdigit(c))
+			alpha = false;
+		else
+			break;
+	}
+	return len - match;
 }
 
+
 int filevercmp(const char *a, const char *b, size_t al, size_t bl, size_t ai, size_t bi) {
-	int scmp = strcmp((char *)a, (char *)b);
-	if (scmp == 0) return 0;
-	if (al == 0) return -1;
-	if (bl == 0) return 1;
-
-	// Special cases for hidden files
-	if (a[0] == '.' && b[0] != '.')
-		return -1;
-	if (a[0] != '.' && b[0] == '.')
-		return 1;
-	if (a[0] == '.' && b[0] == '.')
-		a++, al--, b++, bl--;
-
-	int result;
-	if (ai == bi && strncmp((char *)a, (char *)b, ai) == 0) {
+	if (!al || !bl) return !al - !bl;
+	int s = strcmp(a, b);
+	if (!s) return 0;
+	if (a[0] == '.' && b[0] != '.') return -1;
+	if (a[0] != '.' && b[0] == '.') return 1;
+	if (a[0] == '.' && b[0] == '.') a++, al--, b++, bl--;
+	if (ai == bi && !strncmp(a, b, ai)) {
 		a += ai; ai = al - ai;
 		b += bi; bi = bl - bi;
 	}
-	result = verrevcmp(a, b, ai, bi);
-	return result == 0 ? scmp : result;
+	int r = verrevcmp(a, b, ai, bi);
+	return r ? r : s;
 }
-
-#ifdef TEST
-#include <stdio.h>
-int main(void) {
-	char *s1 = 0, *s2 = 0;
-	size_t len1 = 0, len2 = 0;
-	for (;;) {
-		ssize_t n1 = getdelim(&s1, &len1, 0, stdin);
-		ssize_t n2 = getdelim(&s2, &len2, 0, stdin);
-		if (n1 == -1 || n2 == -1) break;
-		size_t suf1 = suffix(s1, len1);
-		size_t suf2 = suffix(s2, len2);
-		int z = filevercmp(s1, s2, len1, len2, suf1, suf2);
-		printf("%d\n", z);
-	}
-}
-#endif

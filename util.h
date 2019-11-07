@@ -9,9 +9,25 @@
 
 #define assertx(expr) (expr?(void)0:abort())
 
-bool size_mul_overflow(size_t a, size_t b, size_t *result);
+#define MAX(x, y) ((x)>(y)?(x):(y))
+#define MIN(x, y) ((x)<(y)?(x):(y))
 
-void *xmalloc(size_t size);
-void *xrealloc(void *p, size_t size);
-void *xmallocr(size_t nmemb, size_t size);
-void *xreallocr(void *p, size_t nmemb, size_t size);
+#define ls_isalpha(c) (((unsigned)(c)|32)-'a' < 26)
+#define ls_isdigit(c) ((unsigned)(c)-'0' < 10)
+
+static inline size_t size_mul(size_t a, size_t b) {
+    if (b > 1 && SIZE_MAX / b < a) abort();
+	return a * b;
+}
+
+static inline void *xmallocr(size_t nmemb, size_t size) {
+	void *p = malloc(size_mul(nmemb, size));
+	assertx(p);
+	return p;
+}
+
+static inline void *xreallocr(void *p, size_t nmemb, size_t size) {
+	p = realloc(p, size_mul(nmemb, size));
+	assertx(p);
+	return p;
+}
